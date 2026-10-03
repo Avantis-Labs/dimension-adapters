@@ -32,4 +32,28 @@ const adapter: BreakdownAdapter = {
   },
 };
 
+
+import { reportHealth } from '../../utils/healthReport';
+
+// one-shot health instrumentation: row counts on success, error + runtime
+// config on failure (best-effort, never throws)
+for (const version of Object.keys(adapter.breakdown)) {
+  const chains = adapter.breakdown[version as keyof typeof adapter.breakdown];
+  for (const chain of Object.keys(chains)) {
+    const entry = chains[chain as keyof typeof chains] as { fetch?: (ts: unknown) => Promise<unknown> };
+    const orig = entry.fetch;
+    if (typeof orig !== 'function') continue;
+    entry.fetch = async (ts: unknown) => {
+      try {
+        const res = await orig(ts);
+        await reportHealth('baseswap', null, { version, chain, rows: Array.isArray(res) ? res.length : 0 });
+        return res;
+      } catch (e) {
+        await reportHealth('baseswap', e, { version, chain });
+        throw e;
+      }
+    };
+  }
+}
+
 export default adapter;
